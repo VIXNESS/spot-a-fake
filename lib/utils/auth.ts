@@ -3,7 +3,7 @@ import { UserProfile } from '@/lib/types/auth'
 import { redirect } from 'next/navigation'
 
 export async function getUser() {
-  const supabase = createClient()
+  const supabase = await createClient()
   
   const {
     data: { user },
@@ -13,7 +13,7 @@ export async function getUser() {
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  const supabase = createClient()
+  const supabase = await createClient()
   
   const { data, error } = await supabase
     .from('user_profiles')

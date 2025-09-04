@@ -39,13 +39,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       setIsLoading(true)
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
         throw error
+      }
+
+      // Wait for the auth state to be updated
+      if (data.user) {
+        setUser(data.user)
+        // Fetch and set the user profile
+        const userProfile = await fetchProfile(data.user.id)
+        setProfile(userProfile)
+        
+        // Give a small delay to ensure the auth state is fully propagated
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
     } catch (error) {
       console.error('Error signing in:', error)

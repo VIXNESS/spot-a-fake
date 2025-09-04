@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -10,8 +10,15 @@ export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   
-  const { signIn } = useAuth()
+  const { signIn, user, isAdmin } = useAuth()
   const router = useRouter()
+
+  // Redirect if already authenticated as admin
+  useEffect(() => {
+    if (user && isAdmin) {
+      router.push('/admin/dashboard')
+    }
+  }, [user, isAdmin, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,7 +27,7 @@ export default function AdminLogin() {
 
     try {
       await signIn(email, password)
-      router.push('/admin/dashboard')
+      // The useEffect above will handle the redirect
     } catch (err: any) {
       setError(err.message || 'Failed to sign in')
     } finally {

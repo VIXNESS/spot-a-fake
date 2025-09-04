@@ -8,10 +8,23 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user, signOut, isAdmin } = useAuth()
+  const { user, signOut, isAdmin, isLoading } = useAuth()
 
+  // Show loading state while auth is being determined
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          <p className="mt-2 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Let middleware handle redirects for non-admin users
   if (!isAdmin) {
-    return children // Let middleware handle redirects
+    return children
   }
 
   return (
