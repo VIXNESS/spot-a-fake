@@ -127,7 +127,28 @@ WHERE email = 'your-admin-email@example.com';
 The admin dashboard (`/admin/dashboard`) provides:
 - User list with roles
 - Role management (promote/demote users)
+- **Create new users** with email and password
 - User activity overview
+- Secure admin-only access
+
+### Creating New Users
+
+Admins can create new users through the admin dashboard:
+
+1. **Navigate to Create User**: From the admin dashboard, click "Create User" in the navigation or use the "Create New User" button
+2. **Fill the Form**: Enter the user's email address and set a password
+3. **User Creation**: The system will:
+   - Create the user account in Supabase Auth
+   - Automatically confirm the email address
+   - Assign the 'user' role by default
+   - Create the user profile in the database
+4. **Immediate Access**: The new user can sign in immediately with the provided credentials
+
+**Features:**
+- Password validation (minimum 6 characters)
+- Email format validation
+- Automatic email confirmation
+- Default 'user' role assignment
 - Secure admin-only access
 
 ## 8. Security Features

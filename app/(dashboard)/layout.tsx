@@ -45,10 +45,10 @@ export default function DashboardLayout({
                   Dashboard
                 </Link>
                 <Link
-                  href="/admin/users"
+                  href="/admin/create-user"
                   className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
                 >
-                  User Management
+                  Create User
                 </Link>
               </nav>
             </div>

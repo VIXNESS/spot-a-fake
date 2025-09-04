@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
 import { UserProfile, UserRole } from '@/lib/types/auth'
+import Link from 'next/link'
 
 export default function AdminDashboard() {
   const { user, isAdmin, isLoading: authLoading } = useAuth()
@@ -86,7 +87,15 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">User Management</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
+            <Link
+              href="/admin/create-user"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+            >
+              Create New User
+            </Link>
+          </div>
           
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
