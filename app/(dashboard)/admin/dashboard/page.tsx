@@ -33,26 +33,6 @@ export default function AdminDashboard() {
     }
   }
 
-  // Update user role
-  const updateUserRole = async (userId: string, newRole: UserRole) => {
-    try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ role: newRole })
-        .eq('user_id', userId)
-
-      if (error) {
-        throw error
-      }
-
-      // Update local state
-      setUsers(users.map(user => 
-        user.user_id === userId ? { ...user, role: newRole } : user
-      ))
-    } catch (err: any) {
-      setError(err.message || 'Failed to update user role')
-    }
-  }
 
   useEffect(() => {
     if (isAdmin) {
@@ -122,9 +102,6 @@ export default function AdminDashboard() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Created At
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -144,20 +121,6 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(userProfile.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <select
-                          value={userProfile.role}
-                          onChange={(e) => updateUserRole(userProfile.user_id, e.target.value as UserRole)}
-                          className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          disabled={userProfile.user_id === user?.id}
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                        {userProfile.user_id === user?.id && (
-                          <p className="text-xs text-gray-400 mt-1">Cannot modify own role</p>
-                        )}
                       </td>
                     </tr>
                   ))}
