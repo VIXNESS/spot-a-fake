@@ -9,12 +9,33 @@ export default function CreateUserPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({
     email: '',
-    password: '',
-    confirmPassword: ''
+    password: ''
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [copiedPassword, setCopiedPassword] = useState(false)
+
+  // Generate a random password
+  const generatePassword = () => {
+    const length = 12
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*'
+    let password = ''
+    for (let i = 0; i < length; i++) {
+      password += charset.charAt(Math.floor(Math.random() * charset.length))
+    }
+    return password
+  }
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(formData.password)
+      setCopiedPassword(true)
+      setTimeout(() => setCopiedPassword(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy password:', err)
+    }
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -35,22 +56,18 @@ export default function CreateUserPage() {
 
     try {
       // Basic validation
-      if (!formData.email || !formData.password || !formData.confirmPassword) {
-        throw new Error('All fields are required')
-      }
-
-      if (formData.password !== formData.confirmPassword) {
-        throw new Error('Passwords do not match')
-      }
-
-      if (formData.password.length < 6) {
-        throw new Error('Password must be at least 6 characters long')
+      if (!formData.email) {
+        throw new Error('Email is required')
       }
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(formData.email)) {
         throw new Error('Please enter a valid email address')
       }
+
+      // Generate password for the user
+      const generatedPassword = generatePassword()
+      setFormData(prev => ({ ...prev, password: generatedPassword }))
 
       // Call the API to create user
       const response = await fetch('/api/admin/create-user', {
@@ -60,7 +77,7 @@ export default function CreateUserPage() {
         },
         body: JSON.stringify({
           email: formData.email,
-          password: formData.password,
+          password: generatedPassword,
         }),
       })
 
@@ -71,16 +88,20 @@ export default function CreateUserPage() {
       }
 
       setSuccess(`User ${formData.email} created successfully!`)
-      setFormData({
-        email: '',
-        password: '',
-        confirmPassword: ''
-      })
+      // Don't clear the form immediately so user can copy the password
+      // setFormData({
+      //   email: '',
+      //   password: ''
+      // })
 
-      // Redirect to dashboard after a short delay
+      // Clear the form after a longer delay to allow password copying
       setTimeout(() => {
-        router.push('/admin/dashboard')
-      }, 2000)
+        setFormData({
+          email: '',
+          password: ''
+        })
+        setSuccess('')
+      }, 10000)
 
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred')
@@ -154,41 +175,37 @@ export default function CreateUserPage() {
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-                minLength={6}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Enter password (minimum 6 characters)"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                id="confirmPassword"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                required
-                minLength={6}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Confirm password"
-                disabled={isLoading}
-              />
-            </div>
+            {formData.password && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Generated Password
+                </label>
+                <div className="mt-1 flex rounded-md shadow-sm">
+                  <input
+                    type="text"
+                    value={formData.password}
+                    readOnly
+                    className="flex-1 block w-full px-3 py-2 border border-gray-300 rounded-l-md bg-gray-50 text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyToClipboard}
+                    className="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 rounded-r-md bg-gray-50 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                  >
+                    {copiedPassword ? (
+                      <span className="text-green-600 text-sm">Copied!</span>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  This password will be auto-generated when you create the user. Make sure to copy it!
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-4">
               <button
@@ -222,6 +239,8 @@ export default function CreateUserPage() {
             <ul className="text-sm text-gray-600 space-y-1">
               <li>• The user will be created with a 'user' role by default</li>
               <li>• The user's email will be automatically confirmed</li>
+              <li>• A secure password will be auto-generated for the user</li>
+              <li>• Make sure to copy and share the generated password with the user</li>
               <li>• You can change the user's role later from the dashboard</li>
               <li>• The user can sign in immediately with the provided credentials</li>
             </ul>
