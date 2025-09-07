@@ -147,6 +147,58 @@ async function cropImageByBox(imageUrl: string, box: number[]): Promise<string> 
   return croppedImageData
 }
 
+// Helper function to segment human image into parts
+async function segmentHumanImage(croppedHumanImage: string, originalBox: number[]): Promise<Array<{segment: string, coordinates: {x: number, y: number, width: number, height: number}}>> {
+  // This would use an image processing library like Sharp or Canvas to segment the human
+  // For now, simulating segmentation of a human into body parts
+  
+  const [x1, y1, x2, y2] = originalBox
+  const humanWidth = x2 - x1
+  const humanHeight = y2 - y1
+  
+  // Divide human into 4 segments (head, torso, legs, arms area)
+  const segments = [
+    {
+      segment: `data:image/png;base64,human_head_segment_${x1}_${y1}_data...`,
+      coordinates: { 
+        x: x1, 
+        y: y1, 
+        width: humanWidth, 
+        height: Math.floor(humanHeight * 0.25) // Top 25% for head
+      }
+    },
+    {
+      segment: `data:image/png;base64,human_torso_segment_${x1}_${y1}_data...`,
+      coordinates: { 
+        x: x1, 
+        y: y1 + Math.floor(humanHeight * 0.25), 
+        width: humanWidth, 
+        height: Math.floor(humanHeight * 0.45) // Middle 45% for torso
+      }
+    },
+    {
+      segment: `data:image/png;base64,human_legs_segment_${x1}_${y1}_data...`,
+      coordinates: { 
+        x: x1, 
+        y: y1 + Math.floor(humanHeight * 0.7), 
+        width: humanWidth, 
+        height: Math.floor(humanHeight * 0.3) // Bottom 30% for legs
+      }
+    },
+    {
+      segment: `data:image/png;base64,human_arms_segment_${x1}_${y1}_data...`,
+      coordinates: { 
+        x: x1, 
+        y: y1 + Math.floor(humanHeight * 0.25), 
+        width: humanWidth, 
+        height: Math.floor(humanHeight * 0.45) // Arms overlap with torso area
+      }
+    }
+  ]
+  
+  return segments
+}
+
 // Modified AI analysis function
 async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
 
@@ -160,61 +212,107 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
     return await processSegments(segments, 'fallback_segmentation')
   }
 
-  // Step 2: Filter for human detections only
-  const humanDetections = yoloResults.detections.filter((detection: any) => 
-    detection.type === 'person' && detection.confidence >= 0.8
+  // Step 2: Process all detections with sufficient confidence
+  const validDetections = yoloResults.detections.filter((detection: any) => 
+    detection.confidence >= 0.6 // Lower threshold for all objects
   )
 
-  if (humanDetections.length === 0) {
-    console.log('No human detections found, skipping segmentation')
+  if (validDetections.length === 0) {
+    console.log('No valid detections found')
     return []
   }
 
-  // Step 3: Process only human detection boxes
+  // Step 3: Process each detection based on type
   const segmentResults = []
   
-  for (let i = 0; i < humanDetections.length; i++) {
-    const detection = humanDetections[i]
+  for (let i = 0; i < validDetections.length; i++) {
+    const detection = validDetections[i]
     
-    // Crop image to detection box
-    const croppedImage = await cropImageByBox(imageUrl, detection.box)
-    
-    // Create segment-like object for the cropped human
-    const humanSegment = {
-      segment: croppedImage,
-      coordinates: {
+    if (detection.type === 'person') {
+      // Human detected: segment the human area into parts
+      console.log(`Processing human detection ${i + 1}`)
+      
+      // Crop image to detection box
+      const croppedHumanImage = await cropImageByBox(imageUrl, detection.box)
+      
+      // Segment the cropped human image into parts (similar to original segmentImage)
+      const humanSegments = await segmentHumanImage(croppedHumanImage, detection.box)
+      
+      // Process each human segment part
+      for (let j = 0; j < humanSegments.length; j++) {
+        const humanSegment = humanSegments[j]
+        
+        // Analyze each human segment part
+        const aiResult = await callAIForSegment(humanSegment.segment, parseInt(`${i}${j}`), humanSegment.coordinates)
+        
+        // Create analysis detail for this human segment part
+        const analysisDetail = {
+          type: `human_segment_${i + 1}_part_${j + 1}`,
+          description: `Analysis of human ${i + 1} segment part ${j + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
+          confidence: aiResult.confidence,
+          imageData: humanSegment.segment,
+          metadata: {
+            segmentIndex: `${i}_${j}`,
+            coordinates: humanSegment.coordinates,
+            manipulationDetected: aiResult.manipulationDetected,
+            processingTime: aiResult.processingTime,
+            hasError: aiResult.error || false,
+            yoloDetection: {
+              confidence: detection.confidence,
+              box: detection.box,
+              classId: detection.classId,
+              pose: detection.pose,
+              parentDetectionIndex: i,
+              segmentPartIndex: j
+            }
+          }
+        }
+        
+        segmentResults.push(analysisDetail)
+      }
+    } else {
+      // Non-human detected: add directly without segmentation
+      console.log(`Processing non-human detection: ${detection.type}`)
+      
+      // Crop image to detection box
+      const croppedImage = await cropImageByBox(imageUrl, detection.box)
+      
+      // Analyze the non-human detection directly (no further segmentation)
+      const aiResult = await callAIForSegment(croppedImage, i, {
         x: detection.box[0],
         y: detection.box[1], 
         width: detection.box[2] - detection.box[0],
         height: detection.box[3] - detection.box[1]
-      }
-    }
-
-    // Analyze the human segment
-    const aiResult = await callAIForSegment(humanSegment.segment, i, humanSegment.coordinates)
-    
-    // Create analysis detail for this human detection
-    const analysisDetail = {
-      type: `human_detection_${i + 1}`,
-      description: `Analysis of detected human ${i + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
-      confidence: aiResult.confidence,
-      imageData: humanSegment.segment,
-      metadata: {
-        segmentIndex: i,
-        coordinates: humanSegment.coordinates,
-        manipulationDetected: aiResult.manipulationDetected,
-        processingTime: aiResult.processingTime,
-        hasError: aiResult.error || false,
-        yoloDetection: {
-          confidence: detection.confidence,
-          box: detection.box,
-          classId: detection.classId,
-          pose: detection.pose
+      })
+      
+      // Create analysis detail for this non-human detection
+      const analysisDetail = {
+        type: `${detection.type}_detection_${i + 1}`,
+        description: `Analysis of detected ${detection.type} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
+        confidence: aiResult.confidence,
+        imageData: croppedImage,
+        metadata: {
+          segmentIndex: i,
+          coordinates: {
+            x: detection.box[0],
+            y: detection.box[1], 
+            width: detection.box[2] - detection.box[0],
+            height: detection.box[3] - detection.box[1]
+          },
+          manipulationDetected: aiResult.manipulationDetected,
+          processingTime: aiResult.processingTime,
+          hasError: aiResult.error || false,
+          yoloDetection: {
+            confidence: detection.confidence,
+            box: detection.box,
+            classId: detection.classId,
+            pose: detection.pose
+          }
         }
       }
+      
+      segmentResults.push(analysisDetail)
     }
-    
-    segmentResults.push(analysisDetail)
   }
   
   return segmentResults
