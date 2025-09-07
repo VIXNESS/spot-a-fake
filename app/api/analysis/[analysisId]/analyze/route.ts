@@ -147,56 +147,96 @@ async function cropImageByBox(imageUrl: string, box: number[]): Promise<string> 
   return croppedImageData
 }
 
-// Helper function to segment human image into parts
+// Helper function to segment human image into clothing parts using Segformer API
 async function segmentHumanImage(croppedHumanImage: string, originalBox: number[]): Promise<Array<{segment: string, coordinates: {x: number, y: number, width: number, height: number}}>> {
-  // This would use an image processing library like Sharp or Canvas to segment the human
-  // For now, simulating segmentation of a human into body parts
-  
-  const [x1, y1, x2, y2] = originalBox
-  const humanWidth = x2 - x1
-  const humanHeight = y2 - y1
-  
-  // Divide human into 4 segments (head, torso, legs, arms area)
-  const segments = [
-    {
-      segment: `data:image/png;base64,human_head_segment_${x1}_${y1}_data...`,
-      coordinates: { 
-        x: x1, 
-        y: y1, 
-        width: humanWidth, 
-        height: Math.floor(humanHeight * 0.25) // Top 25% for head
-      }
-    },
-    {
-      segment: `data:image/png;base64,human_torso_segment_${x1}_${y1}_data...`,
-      coordinates: { 
-        x: x1, 
-        y: y1 + Math.floor(humanHeight * 0.25), 
-        width: humanWidth, 
-        height: Math.floor(humanHeight * 0.45) // Middle 45% for torso
-      }
-    },
-    {
-      segment: `data:image/png;base64,human_legs_segment_${x1}_${y1}_data...`,
-      coordinates: { 
-        x: x1, 
-        y: y1 + Math.floor(humanHeight * 0.7), 
-        width: humanWidth, 
-        height: Math.floor(humanHeight * 0.3) // Bottom 30% for legs
-      }
-    },
-    {
-      segment: `data:image/png;base64,human_arms_segment_${x1}_${y1}_data...`,
-      coordinates: { 
-        x: x1, 
-        y: y1 + Math.floor(humanHeight * 0.25), 
-        width: humanWidth, 
-        height: Math.floor(humanHeight * 0.45) // Arms overlap with torso area
+  try {
+    const segformerApiUrl = process.env.SEGFORMER_API_URL || 'http://localhost:8100'
+    
+    // Convert base64 image to blob for FormData
+    const base64Data = croppedHumanImage.replace(/^data:image\/[a-z]+;base64,/, '')
+    const imageBuffer = Buffer.from(base64Data, 'base64')
+    
+    // Create FormData for the API request
+    const formData = new FormData()
+    const blob = new Blob([imageBuffer], { type: 'image/png' })
+    formData.append('file', blob, 'human_image.png')
+    formData.append('include_individual_masks', 'true')
+    formData.append('fill_holes', 'true')
+    
+    // Call Segformer API
+    const response = await fetch(`${segformerApiUrl}/api/v1/segment`, {
+      method: 'POST',
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Segformer API failed: ${response.status} ${response.statusText}`)
+    }
+    
+    const segmentationResult = await response.json()
+    
+    // Process the segmentation results
+    const segments = []
+    const [x1, y1, x2, y2] = originalBox
+    
+    // Extract detected clothing items from Segformer response
+    if (segmentationResult.segmentation_result?.detected_items) {
+      for (let i = 0; i < segmentationResult.segmentation_result.detected_items.length; i++) {
+        const item = segmentationResult.segmentation_result.detected_items[i]
+        
+        // Filter for clothing and body parts (exclude background)
+        if (item.label_id > 0 && item.percentage > 1.0) { // Minimum 1% coverage
+          segments.push({
+            segment: `data:image/png;base64,${segmentationResult.segmentation_result.combined_mask.mask_base64}`,
+            coordinates: {
+              x: x1,
+              y: y1,
+              width: x2 - x1,
+              height: y2 - y1
+            }
+          })
+        }
       }
     }
-  ]
-  
-  return segments
+    
+    // If no valid segments found, return a fallback segment
+    if (segments.length === 0) {
+      console.log('No clothing segments detected, using full human area as fallback')
+      segments.push({
+        segment: croppedHumanImage,
+        coordinates: {
+          x: x1,
+          y: y1,
+          width: x2 - x1,
+          height: y2 - y1
+        }
+      })
+    }
+    
+    console.log(`Segformer API detected ${segments.length} clothing segments`)
+    return segments
+    
+  } catch (error) {
+    console.error('Error calling Segformer API:', error)
+    
+    // Fallback to simple segmentation if API fails
+    const [x1, y1, x2, y2] = originalBox
+    const humanWidth = x2 - x1
+    const humanHeight = y2 - y1
+    
+    console.log('Using fallback segmentation approach')
+    return [
+      {
+        segment: croppedHumanImage,
+        coordinates: { 
+          x: x1, 
+          y: y1, 
+          width: humanWidth, 
+          height: humanHeight
+        }
+      }
+    ]
+  }
 }
 
 // Modified AI analysis function
