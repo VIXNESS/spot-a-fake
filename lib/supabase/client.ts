@@ -40,6 +40,8 @@ export type Database = {
           user_id: string
           image_url: string
           visibility: 'private' | 'public'
+          ai_confidence: number | null
+          ai_result_text: string | null
           created_at: string
           updated_at: string
         }
@@ -48,6 +50,8 @@ export type Database = {
           user_id: string
           image_url: string
           visibility?: 'private' | 'public'
+          ai_confidence?: number | null
+          ai_result_text?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -56,6 +60,8 @@ export type Database = {
           user_id?: string
           image_url?: string
           visibility?: 'private' | 'public'
+          ai_confidence?: number | null
+          ai_result_text?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -66,6 +72,8 @@ export type Database = {
           analysis_id: string
           user_id: string
           image_url: string
+          ai_confidence: number | null
+          ai_result_text: string | null
           created_at: string
           updated_at: string
         }
@@ -74,6 +82,8 @@ export type Database = {
           analysis_id: string
           user_id: string
           image_url: string
+          ai_confidence?: number | null
+          ai_result_text?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -82,6 +92,8 @@ export type Database = {
           analysis_id?: string
           user_id?: string
           image_url?: string
+          ai_confidence?: number | null
+          ai_result_text?: string | null
           created_at?: string
           updated_at?: string
         }

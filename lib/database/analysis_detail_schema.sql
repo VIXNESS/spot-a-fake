@@ -4,6 +4,8 @@ CREATE TABLE analysis_detail (
     analysis_id UUID REFERENCES analysis(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     image_url TEXT NOT NULL, -- Supabase Storage URL for detail images
+    ai_confidence DECIMAL(5,4), -- AI confidence score (0.0000 to 1.0000)
+    ai_result_text TEXT, -- AI analysis result text
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
