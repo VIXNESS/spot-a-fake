@@ -199,6 +199,8 @@ async function detectFakeGoodsStreaming(
   }
 }
 
+
+
 // Helper function to parse streaming analysis result into structured format
 function parseStreamingAnalysisResult(analysisText: string, brandName: string): {
   authentic_probability: number,
@@ -334,6 +336,85 @@ async function translateText(text: string, sourceLang: string = 'English', targe
   }
 }
 
+
+// Streaming summarization for multiple texts
+async function summarizeTextsStreaming(
+  texts: string[],
+  onProgress: (chunk: string) => void
+): Promise<{
+  full_summary: string
+}> {
+  try {
+    // Basic validation to avoid unnecessary requests
+    const validTexts = (texts || []).map(t => (t || '').trim()).filter(t => t.length > 0)
+    if (validTexts.length === 0) {
+      throw new Error('No valid texts provided for summarization')
+    }
+
+    const response = await fetch(`${process.env.LLM_API_URL}/api/v1/summarize-texts/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({ texts: validTexts })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Summarization streaming API returned ${response.status}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is not available for streaming')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let fullSummary = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6)
+
+          const trimmed = data.trim()
+          if (trimmed === '[DONE]') {
+            // End of stream
+            continue
+          }
+
+          try {
+            const parsed = JSON.parse(data)
+            const content: unknown = parsed?.content
+            if (typeof content === 'string' && content.length > 0) {
+              fullSummary += content
+              onProgress(content)
+            }
+          } catch (e) {
+            // Non-JSON or malformed chunk; ignore safely
+            // Optionally, you could pass through raw text
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    return { full_summary: fullSummary }
+  } catch (error) {
+    console.error('Error in summarizeTextsStreaming:', error)
+    return { full_summary: '' }
+  }
+}
 
 
 
@@ -745,6 +826,8 @@ async function processImageAnalysisStreaming(
     };
   }
 }
+
+
 
 // Modified AI analysis function
 async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
