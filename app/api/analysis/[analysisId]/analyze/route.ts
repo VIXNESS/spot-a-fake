@@ -79,26 +79,163 @@ async function callAIForSegment(segmentData: string, segmentIndex: number, coord
   }
 }
 
+// Call YOLO API for object detection and pose analysis
+async function callYOLOAPI(imageData: string) {
+  try {
+    // Convert base64 image data to form data
+    const formData = new FormData();
+    const blob = await fetch(imageData).then(r => r.blob());
+    formData.append('file', blob);
+
+    const response = await fetch(process.env.YOLO_API_URL + '/api/v1/detect', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`YOLO API returned ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.message || 'YOLO API analysis failed');
+    }
+
+    return {
+      detections: result.detections.map((detection: any) => ({
+        confidence: detection.confidence,
+        box: detection.box,
+        type: detection.type,
+        classId: detection.class_id,
+        pose: detection.pose ? {
+          keypoints: detection.pose.keypoints.xy.map((point: number[]) => ({
+            x: point[0],
+            y: point[1]
+          }))
+        } : null
+      })),
+      count: result.count,
+      processingTime: result.processing_time_ms || 0
+    };
+
+  } catch (error) {
+    console.error('Error calling YOLO API:', error);
+    return {
+      detections: [],
+      count: 0,
+      processingTime: 0,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+
+// Helper function to crop image based on detection box
+async function cropImageByBox(imageUrl: string, box: number[]): Promise<string> {
+  // This would use an image processing library like Sharp or Canvas
+  // For now, simulating cropped image generation
+  // box format: [x1, y1, x2, y2]
+  
+  const [x1, y1, x2, y2] = box
+  const width = x2 - x1
+  const height = y2 - y1
+  
+  // Mock cropped image data - in real implementation, use Sharp/Canvas to crop
+  const croppedImageData = `data:image/png;base64,cropped_segment_${x1}_${y1}_${width}_${height}_data...`
+  
+  return croppedImageData
+}
+
 // Modified AI analysis function
 async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
-  // Step 1: Segment the image
-  const segments = await segmentImage(imageUrl)
+
+  // Step 1: Call YOLO API for object detection
+  const yoloResults = await callYOLOAPI(imageUrl)
   
-  // Step 2: Analyze each segment individually
+  if (yoloResults.error) {
+    console.error('YOLO API failed:', yoloResults.error)
+    // Fallback to original segmentation approach
+    const segments = await segmentImage(imageUrl)
+    return await processSegments(segments, 'fallback_segmentation')
+  }
+
+  // Step 2: Filter for human detections only
+  const humanDetections = yoloResults.detections.filter((detection: any) => 
+    detection.type === 'person' && detection.confidence >= 0.8
+  )
+
+  if (humanDetections.length === 0) {
+    console.log('No human detections found, skipping segmentation')
+    return []
+  }
+
+  // Step 3: Process only human detection boxes
+  const segmentResults = []
+  
+  for (let i = 0; i < humanDetections.length; i++) {
+    const detection = humanDetections[i]
+    
+    // Crop image to detection box
+    const croppedImage = await cropImageByBox(imageUrl, detection.box)
+    
+    // Create segment-like object for the cropped human
+    const humanSegment = {
+      segment: croppedImage,
+      coordinates: {
+        x: detection.box[0],
+        y: detection.box[1], 
+        width: detection.box[2] - detection.box[0],
+        height: detection.box[3] - detection.box[1]
+      }
+    }
+
+    // Analyze the human segment
+    const aiResult = await callAIForSegment(humanSegment.segment, i, humanSegment.coordinates)
+    
+    // Create analysis detail for this human detection
+    const analysisDetail = {
+      type: `human_detection_${i + 1}`,
+      description: `Analysis of detected human ${i + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
+      confidence: aiResult.confidence,
+      imageData: humanSegment.segment,
+      metadata: {
+        segmentIndex: i,
+        coordinates: humanSegment.coordinates,
+        manipulationDetected: aiResult.manipulationDetected,
+        processingTime: aiResult.processingTime,
+        hasError: aiResult.error || false,
+        yoloDetection: {
+          confidence: detection.confidence,
+          box: detection.box,
+          classId: detection.classId,
+          pose: detection.pose
+        }
+      }
+    }
+    
+    segmentResults.push(analysisDetail)
+  }
+  
+  return segmentResults
+}
+
+// Helper function to process segments (for fallback)
+async function processSegments(segments: any[], analysisType: string) {
   const segmentResults = []
   
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]
     
-    // Call AI API for this specific segment (no streaming)
+    // Call AI API for this specific segment
     const aiResult = await callAIForSegment(segment.segment, i, segment.coordinates)
     
     // Create analysis detail for this segment
     const analysisDetail = {
-      type: `segment_analysis_${i + 1}`,
+      type: `${analysisType}_${i + 1}`,
       description: `Analysis of image segment ${i + 1} (${segment.coordinates.x},${segment.coordinates.y}) - ${aiResult.findings}`,
       confidence: aiResult.confidence,
-      imageData: segment.segment, // The segmented image data
+      imageData: segment.segment,
       metadata: {
         segmentIndex: i,
         coordinates: segment.coordinates,
