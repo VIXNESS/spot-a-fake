@@ -42,7 +42,7 @@ async function analyzeLuxuryImage(imageUrl: string): Promise<{
 }
 
 
-// Analyze image for fake goods detection
+// Analyze image for fake goods detection (standard non-streaming version)
 async function detectFakeGoods(imageBase64: string, brandName: string): Promise<{
   authentic_probability: number,
   confidence_level: string,
@@ -92,6 +92,203 @@ async function detectFakeGoods(imageBase64: string, brandName: string): Promise<
       recommendation: 'Unable to verify authenticity due to technical error'
     };
   }
+}
+
+// Streaming version of fake goods detection with real-time progress updates
+async function detectFakeGoodsStreaming(
+  imageBase64: string, 
+  brandName: string,
+  onProgress: (chunk: string) => void
+): Promise<{
+  authentic_probability: number,
+  confidence_level: string,
+  key_findings: string[],
+  red_flags: string[],
+  authentic_indicators: string[],
+  overall_assessment: string,
+  recommendation: string
+}> {
+  try {
+    const response = await fetch(`${process.env.LLM_API_URL}/api/v1/detect-fake-goods/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        image_base64: imageBase64,
+        brand_name: brandName
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Streaming fake goods detection API returned ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is not available for streaming');
+    }
+
+    // Process the streaming response
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullAnalysisText = '';
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          break;
+        }
+
+        // Decode the chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process complete lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6); // Remove 'data: ' prefix
+            
+            if (data.trim() === '[DONE]') {
+              // End of stream
+              continue;
+            }
+            
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+              
+              if (content) {
+                fullAnalysisText += content;
+                // Send real-time progress update
+                onProgress(content);
+              }
+            } catch (parseError) {
+              // Skip malformed JSON chunks
+              console.warn('Failed to parse streaming chunk:', parseError);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Parse the final accumulated analysis text to extract structured data
+    // This is a simplified parser - in production, you might want more robust parsing
+    const analysisResult = parseStreamingAnalysisResult(fullAnalysisText, brandName);
+    
+    return analysisResult;
+
+  } catch (error) {
+    console.error('Error in streaming fake goods detection:', error);
+    return {
+      authentic_probability: 0,
+      confidence_level: 'low',
+      key_findings: [],
+      red_flags: [`Streaming analysis error: ${error instanceof Error ? error.message : 'Unknown error'}`],
+      authentic_indicators: [],
+      overall_assessment: 'Streaming analysis failed',
+      recommendation: 'Unable to verify authenticity due to streaming error'
+    };
+  }
+}
+
+// Helper function to parse streaming analysis result into structured format
+function parseStreamingAnalysisResult(analysisText: string, brandName: string): {
+  authentic_probability: number,
+  confidence_level: string,
+  key_findings: string[],
+  red_flags: string[],
+  authentic_indicators: string[],
+  overall_assessment: string,
+  recommendation: string
+} {
+  // Extract key information from the analysis text using simple pattern matching
+  // This is a basic implementation - you might want to make this more sophisticated
+  
+  const lowerText = analysisText.toLowerCase();
+  
+  // Estimate authenticity probability based on positive/negative indicators
+  let authentic_probability = 0.5; // Default neutral
+  const positiveWords = ['authentic', 'genuine', 'real', 'legitimate', 'quality', 'correct', 'proper'];
+  const negativeWords = ['fake', 'counterfeit', 'replica', 'suspicious', 'poor', 'incorrect', 'wrong'];
+  
+  let positiveCount = 0;
+  let negativeCount = 0;
+  
+  positiveWords.forEach(word => {
+    const count = (lowerText.match(new RegExp(word, 'g')) || []).length;
+    positiveCount += count;
+  });
+  
+  negativeWords.forEach(word => {
+    const count = (lowerText.match(new RegExp(word, 'g')) || []).length;
+    negativeCount += count;
+  });
+  
+  if (positiveCount > negativeCount) {
+    authentic_probability = Math.min(0.95, 0.5 + (positiveCount - negativeCount) * 0.1);
+  } else if (negativeCount > positiveCount) {
+    authentic_probability = Math.max(0.05, 0.5 - (negativeCount - positiveCount) * 0.1);
+  }
+  
+  // Determine confidence level
+  let confidence_level = 'medium';
+  if (Math.abs(positiveCount - negativeCount) >= 3) {
+    confidence_level = 'high';
+  } else if (Math.abs(positiveCount - negativeCount) <= 1) {
+    confidence_level = 'low';
+  }
+  
+  // Extract key findings, red flags, and authentic indicators
+  // This is a simplified extraction - you might want more sophisticated NLP
+  const sentences = analysisText.split('.').map(s => s.trim()).filter(s => s.length > 10);
+  
+  const key_findings: string[] = [];
+  const red_flags: string[] = [];
+  const authentic_indicators: string[] = [];
+  
+  sentences.forEach(sentence => {
+    const lowerSentence = sentence.toLowerCase();
+    
+    if (negativeWords.some(word => lowerSentence.includes(word))) {
+      red_flags.push(sentence);
+    } else if (positiveWords.some(word => lowerSentence.includes(word))) {
+      authentic_indicators.push(sentence);
+    } else if (sentence.length > 20) {
+      key_findings.push(sentence);
+    }
+  });
+  
+  // Limit arrays to reasonable sizes
+  const maxItems = 5;
+  key_findings.splice(maxItems);
+  red_flags.splice(maxItems);
+  authentic_indicators.splice(maxItems);
+  
+  // Generate recommendation
+  let recommendation = 'Proceed with caution and additional verification';
+  if (authentic_probability >= 0.8) {
+    recommendation = 'Likely authentic - high confidence in genuineness';
+  } else if (authentic_probability <= 0.3) {
+    recommendation = 'High risk of counterfeit - recommend avoiding purchase';
+  }
+  
+  return {
+    authentic_probability: Math.round(authentic_probability * 10000) / 10000,
+    confidence_level,
+    key_findings: key_findings.length > 0 ? key_findings : [`Analyzed ${brandName} product characteristics`],
+    red_flags: red_flags.length > 0 ? red_flags : [],
+    authentic_indicators: authentic_indicators.length > 0 ? authentic_indicators : [],
+    overall_assessment: analysisText.substring(0, 500) + (analysisText.length > 500 ? '...' : ''),
+    recommendation
+  };
 }
 
 async function translateText(text: string, sourceLang: string = 'English', targetLang: string = 'Chinese'): Promise<{
@@ -419,6 +616,136 @@ async function processImageAnalysis(imageUrl: string, analysisId: string, userId
   }
 }
 
+// Streaming version of image analysis pipeline that sends real-time updates
+async function processImageAnalysisStreaming(
+  imageUrl: string, 
+  analysisId: string, 
+  userId: string,
+  onProgress: (step: string, message: string, data?: any) => void
+): Promise<{
+  analysis_id: string,
+  user_id: string,
+  image_url: string,
+  ai_confidence: number,
+  ai_result_text: string
+}> {
+  try {
+    // Step 1: Analyze luxury image to identify brand and product
+    onProgress('luxury_analysis', 'Analyzing luxury image to identify brand and product...');
+    const luxuryAnalysis = await analyzeLuxuryImage(imageUrl);
+    onProgress('luxury_analysis_complete', 'Luxury analysis complete', { 
+      brand: luxuryAnalysis.brand, 
+      confidence: luxuryAnalysis.confident 
+    });
+    
+    // Step 2: Convert image to base64 for fake goods detection
+    onProgress('image_conversion', 'Converting image to base64 format...');
+    const imageBase64 = await imageUrlToBase64(imageUrl);
+    onProgress('image_conversion_complete', 'Image conversion complete');
+    
+    // Step 3: Detect fake goods using the brand from luxury analysis (with streaming)
+    const brandName = luxuryAnalysis.brand || 'Unknown Brand';
+    onProgress('fake_goods_analysis', `Starting authenticity analysis for ${brandName}...`);
+    
+    const fakeGoodsAnalysis = await detectFakeGoodsStreaming(
+      imageBase64, 
+      brandName,
+      (chunk: string) => {
+        // Stream real-time analysis content
+        onProgress('fake_goods_streaming', chunk);
+      }
+    );
+    
+    onProgress('fake_goods_analysis_complete', 'Authenticity analysis complete', {
+      authentic_probability: fakeGoodsAnalysis.authentic_probability,
+      confidence_level: fakeGoodsAnalysis.confidence_level
+    });
+    
+    // Step 4: Translate the overall assessment to Chinese
+    onProgress('translation', 'Translating analysis results to Chinese...');
+    const translationResult = await translateText(
+      fakeGoodsAnalysis.overall_assessment,
+      'English',
+      'Chinese'
+    );
+    onProgress('translation_complete', 'Translation complete');
+    
+    // Step 5: Compile comprehensive result
+    onProgress('compilation', 'Compiling final analysis results...');
+    const comprehensiveResult = {
+      luxury_analysis: {
+        confidence: luxuryAnalysis.confident,
+        brand: luxuryAnalysis.brand,
+        product: luxuryAnalysis.product
+      },
+      authenticity_analysis: {
+        authentic_probability: fakeGoodsAnalysis.authentic_probability,
+        confidence_level: fakeGoodsAnalysis.confidence_level,
+        key_findings: fakeGoodsAnalysis.key_findings,
+        red_flags: fakeGoodsAnalysis.red_flags,
+        authentic_indicators: fakeGoodsAnalysis.authentic_indicators,
+        overall_assessment: fakeGoodsAnalysis.overall_assessment,
+        recommendation: fakeGoodsAnalysis.recommendation
+      },
+      translation: {
+        original_text: translationResult.original_text,
+        translated_text: translationResult.translated_text,
+        source_language: translationResult.source_language,
+        target_language: translationResult.target_language
+      }
+    };
+    
+    // Calculate overall confidence score (average of luxury confidence and authenticity probability)
+    const overallConfidence = (luxuryAnalysis.confident + fakeGoodsAnalysis.authentic_probability) / 2;
+    
+    onProgress('compilation_complete', 'Analysis pipeline complete', {
+      overall_confidence: overallConfidence,
+      final_result: comprehensiveResult
+    });
+    
+    // Return data structure matching analysis_detail schema
+    return {
+      analysis_id: analysisId,
+      user_id: userId,
+      image_url: imageUrl,
+      ai_confidence: Math.round(overallConfidence * 10000) / 10000, // Round to 4 decimal places
+      ai_result_text: JSON.stringify(comprehensiveResult)
+    };
+    
+  } catch (error) {
+    console.error('Error in streaming processImageAnalysis:', error);
+    onProgress('error', `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    
+    // Return error result in schema format
+    return {
+      analysis_id: analysisId,
+      user_id: userId,
+      image_url: imageUrl,
+      ai_confidence: 0.0000,
+      ai_result_text: JSON.stringify({
+        error: true,
+        message: `Streaming analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        luxury_analysis: { confidence: 0, brand: null, product: null },
+        authenticity_analysis: {
+          authentic_probability: 0,
+          confidence_level: 'low',
+          key_findings: [],
+          red_flags: [`Error during streaming analysis: ${error instanceof Error ? error.message : 'Unknown error'}`],
+          authentic_indicators: [],
+          overall_assessment: 'Streaming analysis failed due to technical error',
+          recommendation: 'Unable to verify authenticity'
+        },
+        translation: {
+          original_text: 'Analysis failed',
+          translated_text: '分析失败',
+          source_language: 'English',
+          target_language: 'Chinese'
+        }
+      })
+    };
+  }
+}
+
 // Modified AI analysis function
 async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
 
@@ -705,15 +1032,245 @@ export async function POST(
           }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialMessage)}\n\n`))
 
-          // Perform AI analysis and get detail records
-          const analysisDetails = await performAIAnalysis(analysis.image_url, analysisId, user.id)
+          // Perform AI analysis and get detail records with streaming support
+          let analysisDetails: any[] = []
+          
+          // Send YOLO analysis start message
+          const yoloMessage = {
+            type: 'yolo_analysis',
+            message: 'Starting object detection and segmentation...'
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(yoloMessage)}\n\n`))
 
-          // Process each analysis detail
+          try {
+            // Call YOLO API for object detection
+            const yoloResults = await callYOLOAPI(analysis.image_url)
+            
+            if (yoloResults.error) {
+              console.error('YOLO API failed:', yoloResults.error)
+              analysisDetails = []
+            } else {
+              // Process valid detections
+              const validDetections = yoloResults.detections.filter((detection: any) => 
+                detection.confidence >= 0.62 // Lower threshold for all objects
+              )
+
+              if (validDetections.length === 0) {
+                console.log('No valid detections found')
+                analysisDetails = []
+              } else {
+                // Send detection results
+                const detectionMessage = {
+                  type: 'detections_found',
+                  message: `Found ${validDetections.length} objects to analyze`,
+                  data: { 
+                    detectionCount: validDetections.length,
+                    detectionTypes: validDetections.map((d: any) => d.type)
+                  }
+                }
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(detectionMessage)}\n\n`))
+
+                // Process each detection with streaming updates
+                for (let i = 0; i < validDetections.length; i++) {
+                  const detection = validDetections[i]
+                  
+                  const processingMessage = {
+                    type: 'processing_detection',
+                    message: `Processing ${detection.type} detection ${i + 1}/${validDetections.length}`,
+                    data: { 
+                      detectionType: detection.type,
+                      confidence: detection.confidence,
+                      progress: i + 1,
+                      total: validDetections.length
+                    }
+                  }
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(processingMessage)}\n\n`))
+                  
+                  if (detection.type === 'person') {
+                    // Human detected: segment the human area into parts
+                    console.log(`Processing human detection ${i + 1}`)
+                    
+                    // Crop image to detection box
+                    const croppedHumanImage = await cropImageByBox(analysis.image_url, detection.box)
+                    
+                    // Segment the cropped human image into parts
+                    const humanSegments = await segmentHumanImage(croppedHumanImage, detection.box)
+                    
+                    // Process each human segment part with streaming
+                    for (let j = 0; j < humanSegments.length; j++) {
+                      const humanSegment = humanSegments[j]
+                      
+                      // Analyze each human segment part with streaming progress
+                      const aiResult = await processImageAnalysisStreaming(
+                        humanSegment.segment, 
+                        analysisId, 
+                        user.id,
+                        (step: string, message: string, data?: any) => {
+                          const streamMessage = {
+                            type: 'ai_analysis_step',
+                            step: step,
+                            message: message,
+                            data: data,
+                            segmentInfo: {
+                              detectionIndex: i,
+                              segmentIndex: j,
+                              detectionType: 'human',
+                              totalDetections: validDetections.length,
+                              totalSegments: humanSegments.length
+                            }
+                          }
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify(streamMessage)}\n\n`))
+                        }
+                      )
+                      
+                      // Parse the AI result
+                      const aiResultData = JSON.parse(aiResult.ai_result_text)
+                      
+                      // Create analysis detail for this human segment part
+                      const analysisDetail = {
+                        type: `human_segment_${i + 1}_part_${j + 1}`,
+                        description: `Analysis of human ${i + 1} segment part ${j + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+                        confidence: aiResult.ai_confidence,
+                        imageData: humanSegment.segment,
+                        metadata: {
+                          segmentIndex: `${i}_${j}`,
+                          coordinates: humanSegment.coordinates,
+                          manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+                          processingTime: 1000,
+                          hasError: aiResultData.error || false,
+                          yoloDetection: {
+                            confidence: detection.confidence,
+                            box: detection.box,
+                            classId: detection.classId,
+                            pose: detection.pose,
+                            parentDetectionIndex: i,
+                            segmentPartIndex: j
+                          },
+                          aiAnalysisResult: aiResultData
+                        }
+                      }
+                      
+                      analysisDetails.push(analysisDetail)
+                    }
+                  } else {
+                    // Non-human detected: add directly without segmentation
+                    console.log(`Processing non-human detection: ${detection.type}`)
+                    
+                    // Crop image to detection box
+                    const croppedImage = await cropImageByBox(analysis.image_url, detection.box)
+                    
+                    // Analyze the non-human detection with streaming progress
+                    const aiResult = await processImageAnalysisStreaming(
+                      croppedImage, 
+                      analysisId, 
+                      user.id,
+                      (step: string, message: string, data?: any) => {
+                        const streamMessage = {
+                          type: 'ai_analysis_step',
+                          step: step,
+                          message: message,
+                          data: data,
+                          segmentInfo: {
+                            detectionIndex: i,
+                            detectionType: detection.type,
+                            totalDetections: validDetections.length
+                          }
+                        }
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(streamMessage)}\n\n`))
+                      }
+                    )
+                    
+                    // Parse the AI result
+                    const aiResultData = JSON.parse(aiResult.ai_result_text)
+                    
+                    // Create analysis detail for this non-human detection
+                    const analysisDetail = {
+                      type: `${detection.type}_detection_${i + 1}`,
+                      description: `Analysis of detected ${detection.type} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+                      confidence: aiResult.ai_confidence,
+                      imageData: croppedImage,
+                      metadata: {
+                        segmentIndex: i,
+                        coordinates: {
+                          x: detection.box[0],
+                          y: detection.box[1], 
+                          width: detection.box[2] - detection.box[0],
+                          height: detection.box[3] - detection.box[1]
+                        },
+                        manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+                        processingTime: 1000,
+                        hasError: aiResultData.error || false,
+                        yoloDetection: {
+                          confidence: detection.confidence,
+                          box: detection.box,
+                          classId: detection.classId,
+                          pose: detection.pose
+                        },
+                        aiAnalysisResult: aiResultData
+                      }
+                    }
+                    
+                    analysisDetails.push(analysisDetail)
+                  }
+                }
+              }
+            }
+          } catch (yoloError) {
+            console.error('Error in YOLO analysis:', yoloError)
+            const errorMessage = {
+              type: 'yolo_error',
+              message: 'Object detection failed, using fallback analysis',
+              error: yoloError instanceof Error ? yoloError.message : 'Unknown error'
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorMessage)}\n\n`))
+            
+            // Fallback: analyze the whole image
+            const fallbackMessage = {
+              type: 'fallback_analysis',
+              message: 'Performing full image analysis as fallback...'
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(fallbackMessage)}\n\n`))
+            
+            const aiResult = await processImageAnalysisStreaming(
+              analysis.image_url, 
+              analysisId, 
+              user.id,
+              (step: string, message: string, data?: any) => {
+                const streamMessage = {
+                  type: 'ai_analysis_step',
+                  step: step,
+                  message: message,
+                  data: data,
+                  segmentInfo: {
+                    fallbackMode: true
+                  }
+                }
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(streamMessage)}\n\n`))
+              }
+            )
+            
+            const aiResultData = JSON.parse(aiResult.ai_result_text)
+            
+            analysisDetails = [{
+              type: 'full_image_analysis',
+              description: `Full image analysis (fallback mode) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+              confidence: aiResult.ai_confidence,
+              imageData: analysis.image_url,
+              metadata: {
+                segmentIndex: 0,
+                coordinates: { x: 0, y: 0, width: 100, height: 100 },
+                manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+                processingTime: 1000,
+                hasError: aiResultData.error || false,
+                fallbackMode: true,
+                aiAnalysisResult: aiResultData
+              }
+            }]
+          }
+
+          // Process each analysis detail for database storage
           for (let i = 0; i < analysisDetails.length; i++) {
             const detail = analysisDetails[i] // This is now a segment result
-            
-            // The segment has already been analyzed by AI
-            // No additional processing time needed since AI call was already made
             
             // Upload the segment image to storage
             let imageUrl = ''

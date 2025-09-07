@@ -11,6 +11,7 @@ A FastAPI service for OpenRouter integration with advanced image analysis capabi
 - [Error Handling](#error-handling)
 - [Examples](#examples)
 - [Rate Limits](#rate-limits)
+- [HTTP Streaming](#-http-streaming-analysis)
 
 ## Overview
 
@@ -19,6 +20,7 @@ The OpenRouter Service provides AI-powered image analysis capabilities through a
 ### Key Features
 - 🔍 **Luxury Fashion Brand Detection** - Identify luxury brands and products in images
 - 🛡️ **Fake Goods Authentication** - Analyze product authenticity with detailed assessments
+- 🌊 **Real-time Streaming** - HTTP streaming support with Server-Sent Events (SSE) for live analysis
 - 🌐 **Text Translation** - Translate English to Chinese with social media styling using DeepSeek AI
 - 🖼️ **Google Image Search** - Search and retrieve images with customizable parameters
 - ⚡ **Async Support** - High-performance asynchronous processing
@@ -80,6 +82,7 @@ Detailed API status with available endpoints and features.
     "/api/v1/status",
     "/api/v1/analyze-image",
     "/api/v1/detect-fake-goods",
+    "/api/v1/detect-fake-goods/stream",
     "/api/v1/translate",
     "/api/v1/search-images (GET & POST)"
   ],
@@ -148,7 +151,10 @@ curl -X POST "http://localhost:8500/api/v1/analyze-image" \
 #### POST `/api/v1/detect-fake-goods`
 Analyzes goods in an image to determine authenticity with detailed assessment.
 
-**Request:**
+#### POST `/api/v1/detect-fake-goods/stream` 🌊
+**Real-time streaming analysis** using Server-Sent Events (SSE) for live fake goods detection.
+
+**Standard Analysis Request:**
 - **Content-Type:** `application/json`
 - **Body:**
 ```json
@@ -162,7 +168,7 @@ Analyzes goods in an image to determine authenticity with detailed assessment.
 - `image_base64` (required): Base64-encoded image data
 - `brand_name` (required): Brand name for authentication analysis
 
-**Response:**
+**Standard Response:**
 ```json
 {
   "authentic_probability": 0.75,
@@ -201,6 +207,153 @@ curl -X POST "http://localhost:8500/api/v1/detect-fake-goods" \
     "image_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
     "brand_name": "Louis Vuitton"
   }'
+```
+
+---
+
+### 🌊 HTTP Streaming Analysis
+
+#### POST `/api/v1/detect-fake-goods/stream`
+**Real-time streaming fake goods analysis** using Server-Sent Events (SSE). This endpoint provides live analysis updates as the AI processes the image, allowing for real-time user feedback and progressive analysis results.
+
+**Streaming Request:**
+- **Content-Type:** `application/json`
+- **Body:** Same as standard endpoint
+```json
+{
+  "image_base64": "base64_encoded_image_data",
+  "brand_name": "Gucci"
+}
+```
+
+**Streaming Response:**
+- **Content-Type:** `text/event-stream`
+- **Headers:**
+  - `Cache-Control: no-cache`
+  - `Connection: keep-alive`
+  - `Content-Type: text/event-stream`
+
+**Response Format (Server-Sent Events):**
+```
+data: {"choices":[{"delta":{"content":"Analyzing the image for "}}]}
+
+data: {"choices":[{"delta":{"content":"Gucci authenticity indicators..."}}]}
+
+data: {"choices":[{"delta":{"content":" The logo typography appears "}}]}
+
+data: {"choices":[{"delta":{"content":"consistent with authentic standards."}}]}
+
+data: [DONE]
+```
+
+**Stream Event Structure:**
+Each chunk follows the SSE format:
+- Events prefixed with `data: `
+- JSON structure containing AI analysis chunks
+- `[DONE]` marker indicates stream completion
+- Real-time content delivered as AI processes the image
+
+**Key Benefits:**
+- 🚀 **Real-time feedback** - See analysis progress as it happens
+- 📱 **Better UX** - Progressive loading for mobile/web apps
+- ⚡ **Lower latency** - First response chunks arrive immediately
+- 🔄 **Live updates** - Stream analysis reasoning in real-time
+
+**Example cURL (Streaming):**
+```bash
+curl -X POST "http://localhost:8500/api/v1/detect-fake-goods/stream" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "image_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+    "brand_name": "Chanel"
+  }'
+```
+
+**JavaScript Example (EventSource):**
+```javascript
+// Prepare the request data
+const requestData = {
+  image_base64: "base64_encoded_image_data",
+  brand_name: "Louis Vuitton"
+};
+
+// Create EventSource for streaming
+const eventSource = new EventSource('/api/v1/detect-fake-goods/stream', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify(requestData)
+});
+
+// Handle streaming data
+eventSource.onmessage = function(event) {
+  if (event.data === '[DONE]') {
+    eventSource.close();
+    console.log('Analysis complete');
+    return;
+  }
+  
+  try {
+    const data = JSON.parse(event.data);
+    const content = data.choices?.[0]?.delta?.content;
+    if (content) {
+      // Display real-time analysis content
+      document.getElementById('analysis-output').innerHTML += content;
+    }
+  } catch (e) {
+    console.error('Error parsing stream data:', e);
+  }
+};
+
+eventSource.onerror = function(event) {
+  console.error('Stream error:', event);
+  eventSource.close();
+};
+```
+
+**Python Client Example (Streaming):**
+```python
+import requests
+import json
+
+def stream_fake_goods_analysis(image_base64, brand_name):
+    url = "http://localhost:8500/api/v1/detect-fake-goods/stream"
+    
+    payload = {
+        "image_base64": image_base64,
+        "brand_name": brand_name
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
+    }
+    
+    response = requests.post(url, json=payload, headers=headers, stream=True)
+    
+    if response.status_code == 200:
+        for line in response.iter_lines(decode_unicode=True):
+            if line.startswith('data: '):
+                data = line[6:]  # Remove 'data: ' prefix
+                
+                if data.strip() == '[DONE]':
+                    print("\\nAnalysis complete")
+                    break
+                    
+                try:
+                    parsed = json.loads(data)
+                    content = parsed.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    if content:
+                        print(content, end="", flush=True)
+                except json.JSONDecodeError:
+                    pass
+    else:
+        print(f"Error: {response.status_code} - {response.text}")
+
+# Usage
+stream_fake_goods_analysis("base64_image_data", "Hermès")
 ```
 
 ### Text Translation
@@ -443,7 +596,7 @@ curl -X POST "http://localhost:8500/api/v1/analyze-image" \
   -F "file=@designer_bag.jpg"
 ```
 
-3. **Authenticate Product:**
+3. **Authenticate Product (Standard):**
 ```bash
 # First, encode your image to base64
 IMAGE_BASE64=$(base64 -w 0 product_image.jpg)
@@ -456,7 +609,19 @@ curl -X POST "http://localhost:8500/api/v1/detect-fake-goods" \
   }"
 ```
 
-4. **Translate Product Description:**
+4. **Authenticate Product (Streaming):**
+```bash
+# Stream real-time analysis
+curl -X POST "http://localhost:8500/api/v1/detect-fake-goods/stream" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d "{
+    \"image_base64\": \"$IMAGE_BASE64\",
+    \"brand_name\": \"Chanel\"
+  }"
+```
+
+5. **Translate Product Description:**
 ```bash
 curl -X POST "http://localhost:8500/api/v1/translate" \
   -H "Content-Type: application/json" \
@@ -465,7 +630,7 @@ curl -X POST "http://localhost:8500/api/v1/translate" \
   }'
 ```
 
-5. **Search for Similar Images:**
+6. **Search for Similar Images:**
 ```bash
 curl "http://localhost:8500/api/v1/search-images?query=chanel%20bag&num_results=10"
 ```
@@ -486,7 +651,7 @@ def analyze_luxury_image(image_path):
         response = requests.post(f"{BASE_URL}/api/v1/analyze-image", files=files)
     return response.json()
 
-# Detect fake goods
+# Detect fake goods (Standard)
 def detect_fake_goods(image_path, brand_name):
     with open(image_path, 'rb') as f:
         image_data = base64.b64encode(f.read()).decode()
@@ -498,6 +663,44 @@ def detect_fake_goods(image_path, brand_name):
     
     response = requests.post(f"{BASE_URL}/api/v1/detect-fake-goods", json=payload)
     return response.json()
+
+# Detect fake goods (Streaming)
+def detect_fake_goods_stream(image_path, brand_name):
+    with open(image_path, 'rb') as f:
+        image_data = base64.b64encode(f.read()).decode()
+    
+    payload = {
+        "image_base64": image_data,
+        "brand_name": brand_name
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
+    }
+    
+    response = requests.post(f"{BASE_URL}/api/v1/detect-fake-goods/stream", 
+                           json=payload, headers=headers, stream=True)
+    
+    # Process streaming response
+    full_analysis = ""
+    for line in response.iter_lines(decode_unicode=True):
+        if line.startswith('data: '):
+            data = line[6:]  # Remove 'data: ' prefix
+            
+            if data.strip() == '[DONE]':
+                break
+                
+            try:
+                parsed = json.loads(data)
+                content = parsed.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                if content:
+                    full_analysis += content
+                    print(content, end="", flush=True)
+            except json.JSONDecodeError:
+                pass
+    
+    return full_analysis
 
 # Translate text
 def translate_text(text, source_language="English", target_language="Chinese"):
@@ -527,9 +730,14 @@ if __name__ == "__main__":
     result = analyze_luxury_image("handbag.jpg")
     print(f"Brand: {result['brand']}, Confidence: {result['confident']}")
     
-    # Check authenticity
+    # Check authenticity (Standard)
     auth_result = detect_fake_goods("product.jpg", "Gucci")
     print(f"Authentic probability: {auth_result['authentic_probability']}")
+    
+    # Check authenticity (Streaming) - Real-time analysis
+    print("Streaming analysis:")
+    stream_result = detect_fake_goods_stream("product.jpg", "Gucci")
+    print(f"\n\nComplete analysis: {len(stream_result)} characters")
     
     # Translate product description
     translation_result = translate_text("This luxury handbag is made from premium Italian leather")
@@ -549,6 +757,7 @@ Currently, the service does not implement rate limiting, but consider the follow
 - **Google Custom Search**: Limited by Google's API quotas (100 searches/day free tier)
 - **File Upload**: Maximum file size depends on server configuration
 - **Translation Text**: Limited to 5000 characters per request
+- **Streaming Endpoints**: Use Server-Sent Events (SSE) - connections stay open during analysis, consider connection limits
 
 ## Development & Deployment
 
