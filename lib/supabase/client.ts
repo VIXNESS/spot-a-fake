@@ -34,6 +34,58 @@ export type Database = {
           updated_at?: string
         }
       }
+      analysis: {
+        Row: {
+          id: string
+          user_id: string
+          image_url: string
+          visibility: 'private' | 'public'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          image_url: string
+          visibility?: 'private' | 'public'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          image_url?: string
+          visibility?: 'private' | 'public'
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      analysis_detail: {
+        Row: {
+          id: string
+          analysis_id: string
+          user_id: string
+          image_url: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          analysis_id: string
+          user_id: string
+          image_url: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          analysis_id?: string
+          user_id?: string
+          image_url?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }
