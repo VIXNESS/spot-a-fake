@@ -2,42 +2,159 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 // Mock AI analysis function - replace with your actual AI API integration
-async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
-  // Simulate AI analysis that creates multiple detail records
-  const analysisDetails = [
+async function segmentImage(imageUrl: string): Promise<Array<{segment: string, coordinates: {x: number, y: number, width: number, height: number}}>> {
+  // This would use an image processing library like Sharp or Canvas
+  // For now, simulating segmentation of an image into parts
+  
+  const segments = [
     {
-      type: 'face_detection',
-      description: 'Analyzing facial features and authenticity markers',
-      confidence: 0.85,
-      details: { faces_detected: 1, authenticity_score: 0.85 }
+      segment: 'data:image/png;base64,segment1data...', // Base64 of segmented part
+      coordinates: { x: 0, y: 0, width: 256, height: 256 }
     },
     {
-      type: 'metadata_analysis', 
-      description: 'Examining image metadata for manipulation signs',
-      confidence: 0.92,
-      details: { exif_data_intact: true, creation_time_consistent: true }
+      segment: 'data:image/png;base64,segment2data...', 
+      coordinates: { x: 256, y: 0, width: 256, height: 256 }
     },
     {
-      type: 'pixel_analysis',
-      description: 'Detecting pixel-level inconsistencies and artifacts',
-      confidence: 0.78,
-      details: { artifacts_found: false, compression_analysis: 'normal' }
+      segment: 'data:image/png;base64,segment3data...', 
+      coordinates: { x: 0, y: 256, width: 256, height: 256 }
     },
     {
-      type: 'lighting_analysis',
-      description: 'Analyzing lighting consistency and shadows',
-      confidence: 0.88,
-      details: { lighting_consistent: true, shadow_analysis: 'natural' }
-    },
-    {
-      type: 'edge_detection',
-      description: 'Examining edge patterns for digital manipulation',
-      confidence: 0.91,
-      details: { unnatural_edges: false, edge_consistency: 'high' }
+      segment: 'data:image/png;base64,segment4data...', 
+      coordinates: { x: 256, y: 256, width: 256, height: 256 }
     }
   ]
+  
+  return segments
+}
 
-  return analysisDetails
+// Call external AI API for each segment
+async function callAIForSegment(segmentData: string, segmentIndex: number, coordinates: any) {
+  // This would be your actual AI API call (OpenAI, Hugging Face, etc.)
+  // Example with fetch to an external AI service:
+  
+  try {
+    const response = await fetch('https://your-ai-api.com/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer YOUR_AI_API_KEY'
+      },
+      body: JSON.stringify({
+        image: segmentData,
+        analysis_type: 'deepfake_detection',
+        segment_info: {
+          index: segmentIndex,
+          coordinates: coordinates
+        }
+      })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`AI API returned ${response.status}`)
+    }
+    
+    const result = await response.json()
+    
+    return {
+      segmentIndex,
+      coordinates,
+      confidence: result.confidence || 0.5,
+      findings: result.findings || 'No specific findings',
+      manipulationDetected: result.manipulation_detected || false,
+      processingTime: result.processing_time_ms || 1000
+    }
+  } catch (error) {
+    console.error(`Error analyzing segment ${segmentIndex}:`, error)
+    // Return a fallback result instead of throwing
+    return {
+      segmentIndex,
+      coordinates,
+      confidence: 0.0,
+      findings: `Error analyzing segment: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      manipulationDetected: false,
+      processingTime: 0,
+      error: true
+    }
+  }
+}
+
+// Modified AI analysis function
+async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
+  // Step 1: Segment the image
+  const segments = await segmentImage(imageUrl)
+  
+  // Step 2: Analyze each segment individually
+  const segmentResults = []
+  
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]
+    
+    // Call AI API for this specific segment (no streaming)
+    const aiResult = await callAIForSegment(segment.segment, i, segment.coordinates)
+    
+    // Create analysis detail for this segment
+    const analysisDetail = {
+      type: `segment_analysis_${i + 1}`,
+      description: `Analysis of image segment ${i + 1} (${segment.coordinates.x},${segment.coordinates.y}) - ${aiResult.findings}`,
+      confidence: aiResult.confidence,
+      imageData: segment.segment, // The segmented image data
+      metadata: {
+        segmentIndex: i,
+        coordinates: segment.coordinates,
+        manipulationDetected: aiResult.manipulationDetected,
+        processingTime: aiResult.processingTime,
+        hasError: aiResult.error || false
+      }
+    }
+    
+    segmentResults.push(analysisDetail)
+  }
+  
+  return segmentResults
+}
+
+async function generateAISummary(analysisDetails: Array<{type: string, description: string, confidence: number, imageData: string}>) {
+  // Calculate overall confidence score
+  const averageConfidence = analysisDetails.reduce((sum, detail) => sum + detail.confidence, 0) / analysisDetails.length
+  
+  // Determine authenticity assessment based on confidence levels
+  let authenticityAssessment: string
+  let overallResult: 'authentic' | 'suspicious' | 'likely_fake'
+  
+  if (averageConfidence >= 0.85) {
+    authenticityAssessment = "High confidence that the image is authentic. All analysis components show consistent patterns typical of genuine content."
+    overallResult = 'authentic'
+  } else if (averageConfidence >= 0.70) {
+    authenticityAssessment = "Moderate confidence with some areas of concern. The image shows mixed indicators that warrant further investigation."
+    overallResult = 'suspicious'
+  } else {
+    authenticityAssessment = "Low confidence - significant concerns detected. Multiple analysis components indicate potential manipulation or synthetic generation."
+    overallResult = 'likely_fake'
+  }
+
+  // Generate detailed summary text
+  const highConfidenceAreas = analysisDetails.filter(d => d.confidence >= 0.85).map(d => d.type)
+  const lowConfidenceAreas = analysisDetails.filter(d => d.confidence < 0.75).map(d => d.type)
+  
+  let detailedSummary = `Overall Analysis Summary:\n\n${authenticityAssessment}\n\n`
+  
+  if (highConfidenceAreas.length > 0) {
+    detailedSummary += `Strong indicators (high confidence): ${highConfidenceAreas.join(', ')}\n`
+  }
+  
+  if (lowConfidenceAreas.length > 0) {
+    detailedSummary += `Areas of concern (low confidence): ${lowConfidenceAreas.join(', ')}\n`
+  }
+  
+  detailedSummary += `\nAverage confidence score: ${(averageConfidence * 100).toFixed(1)}%`
+  
+  return {
+    overallResult,
+    confidence: averageConfidence,
+    summary: detailedSummary,
+    authenticityAssessment
+  }
 }
 
 export async function POST(
@@ -133,18 +250,63 @@ export async function POST(
 
           // Process each analysis detail
           for (let i = 0; i < analysisDetails.length; i++) {
-            const detail = analysisDetails[i]
+            const detail = analysisDetails[i] // This is now a segment result
             
-            // Simulate processing time
-            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000))
+            // The segment has already been analyzed by AI
+            // No additional processing time needed since AI call was already made
+            
+            // Upload the segment image to storage
+            let imageUrl = ''
+            try {
+              const base64Data = detail.imageData.split(',')[1]
+              const imageBuffer = Buffer.from(base64Data, 'base64')
+              
+              const fileName = `${analysisId}/segment_${detail.metadata.segmentIndex}_${Date.now()}.png`
+              
+              // Upload to Supabase Storage
+              const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('analysis-images')
+                .upload(fileName, imageBuffer, {
+                  contentType: 'image/png',
+                  cacheControl: '3600'
+                })
 
-            // Create analysis detail record in database
+              if (uploadError) {
+                console.error('Error uploading image to storage:', uploadError)
+                throw new Error(`Failed to upload ${detail.type} image: ${uploadError.message}`)
+              }
+
+              // Get public URL
+              const { data: publicUrlData } = supabase.storage
+                .from('analysis-images')
+                .getPublicUrl(uploadData.path)
+              
+              imageUrl = publicUrlData.publicUrl
+            } catch (storageError) {
+              console.error('Storage error:', storageError)
+              const errorMessage = {
+                type: 'error',
+                message: `Failed to save ${detail.type} image`,
+                error: storageError instanceof Error ? storageError.message : 'Storage error'
+              }
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorMessage)}\n\n`))
+              continue
+            }
+
+            // Save to database with segment-specific information
             const { data: detailRecord, error: detailError } = await supabase
               .from('analysis_detail')
               .insert({
                 analysis_id: analysisId,
                 user_id: user.id,
-                image_url: `${analysis.image_url}?detail=${detail.type}`, // Mock detail image URL
+                image_url: imageUrl,
+                ai_confidence: detail.confidence,
+                ai_result_text: JSON.stringify({
+                  type: detail.type,
+                  description: detail.description,
+                  confidence: detail.confidence,
+                  segmentInfo: detail.metadata // Store segment coordinates and AI findings
+                })
               })
               .select()
               .single()
@@ -160,25 +322,62 @@ export async function POST(
               continue
             }
 
-            // Send progress update with detail record
+            // Stream progress with segment-specific data
             const progressMessage = {
               type: 'progress',
               step: i + 1,
               total: analysisDetails.length,
               detail: {
                 id: detailRecord.id,
-                analysis_id: detailRecord.analysis_id,
                 type: detail.type,
                 description: detail.description,
                 confidence: detail.confidence,
-                details: detail.details,
-                image_url: detailRecord.image_url,
-                created_at: detailRecord.created_at
+                segmentIndex: detail.metadata.segmentIndex,
+                coordinates: detail.metadata.coordinates,
+                manipulationDetected: detail.metadata.manipulationDetected
               }
             }
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressMessage)}\n\n`))
           }
 
+          // Generate AI summary after all details are processed
+          const summaryMessage = {
+            type: 'summary_progress',
+            message: 'Generating overall analysis summary...'
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(summaryMessage)}\n\n`))
+
+          // Simulate summary generation time
+          await new Promise(resolve => setTimeout(resolve, 1500))
+
+          const aiSummary = await generateAISummary(analysisDetails)
+
+          // Update the main analysis record with the summary
+          const { error: updateError } = await supabase
+            .from('analysis')
+            .update({
+              ai_confidence: aiSummary.confidence,
+              ai_result_text: aiSummary.summary
+            })
+            .eq('id', analysisId)
+
+          if (updateError) {
+            console.error('Error updating analysis with summary:', updateError)
+            const errorMessage = {
+              type: 'error',
+              message: 'Failed to save analysis summary',
+              error: updateError.message
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorMessage)}\n\n`))
+          } else {
+            // Send summary results
+            const summaryResultMessage = {
+              type: 'summary_complete',
+              summary: aiSummary,
+              message: 'Analysis summary saved successfully'
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(summaryResultMessage)}\n\n`))
+          }
           // Send completion message
           const completionMessage = {
             type: 'complete',
