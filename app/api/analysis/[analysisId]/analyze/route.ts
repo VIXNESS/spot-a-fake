@@ -1,83 +1,144 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// Mock AI analysis function - replace with your actual AI API integration
-async function segmentImage(imageUrl: string): Promise<Array<{segment: string, coordinates: {x: number, y: number, width: number, height: number}}>> {
-  // This would use an image processing library like Sharp or Canvas
-  // For now, simulating segmentation of an image into parts
-  
-  const segments = [
-    {
-      segment: 'data:image/png;base64,segment1data...', // Base64 of segmented part
-      coordinates: { x: 0, y: 0, width: 256, height: 256 }
-    },
-    {
-      segment: 'data:image/png;base64,segment2data...', 
-      coordinates: { x: 256, y: 0, width: 256, height: 256 }
-    },
-    {
-      segment: 'data:image/png;base64,segment3data...', 
-      coordinates: { x: 0, y: 256, width: 256, height: 256 }
-    },
-    {
-      segment: 'data:image/png;base64,segment4data...', 
-      coordinates: { x: 256, y: 256, width: 256, height: 256 }
-    }
-  ]
-  
-  return segments
-}
 
-// Call external AI API for each segment
-async function callAIForSegment(segmentData: string, segmentIndex: number, coordinates: any) {
-  // This would be your actual AI API call (OpenAI, Hugging Face, etc.)
-  // Example with fetch to an external AI service:
-  
+// Analyze image for luxury brands
+async function analyzeLuxuryImage(imageUrl: string): Promise<{
+  confident: number,
+  brand: string | null,
+  product: string | null
+}> {
   try {
-    const response = await fetch('https://your-ai-api.com/analyze', {
+    const response = await fetch(`${process.env.LLM_API_URL}/api/v1/analyze-image`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer YOUR_AI_API_KEY'
+        'Content-Type': 'multipart/form-data',
       },
       body: JSON.stringify({
-        image: segmentData,
-        analysis_type: 'deepfake_detection',
-        segment_info: {
-          index: segmentIndex,
-          coordinates: coordinates
-        }
+        file: imageUrl
       })
-    })
-    
+    });
+
     if (!response.ok) {
-      throw new Error(`AI API returned ${response.status}`)
+      throw new Error(`Luxury analysis API returned ${response.status}`);
     }
-    
-    const result = await response.json()
-    
+
+    const result = await response.json();
+
     return {
-      segmentIndex,
-      coordinates,
-      confidence: result.confidence || 0.5,
-      findings: result.findings || 'No specific findings',
-      manipulationDetected: result.manipulation_detected || false,
-      processingTime: result.processing_time_ms || 1000
-    }
+      confident: result.confident || 0,
+      brand: result.brand || null, 
+      product: result.product || null
+    };
+
   } catch (error) {
-    console.error(`Error analyzing segment ${segmentIndex}:`, error)
-    // Return a fallback result instead of throwing
+    console.error('Error analyzing luxury image:', error);
     return {
-      segmentIndex,
-      coordinates,
-      confidence: 0.0,
-      findings: `Error analyzing segment: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      manipulationDetected: false,
-      processingTime: 0,
-      error: true
-    }
+      confident: 0,
+      brand: null,
+      product: null
+    };
   }
 }
+
+
+// Analyze image for fake goods detection
+async function detectFakeGoods(imageBase64: string, brandName: string): Promise<{
+  authentic_probability: number,
+  confidence_level: string,
+  key_findings: string[],
+  red_flags: string[],
+  authentic_indicators: string[],
+  overall_assessment: string,
+  recommendation: string
+}> {
+  try {
+    const response = await fetch(`${process.env.LLM_API_URL}/api/v1/detect-fake-goods`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        image_base64: imageBase64,
+        brand_name: brandName
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Fake goods detection API returned ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    return {
+      authentic_probability: result.authentic_probability || 0,
+      confidence_level: result.confidence_level || 'low',
+      key_findings: result.key_findings || [],
+      red_flags: result.red_flags || [],
+      authentic_indicators: result.authentic_indicators || [],
+      overall_assessment: result.overall_assessment || '',
+      recommendation: result.recommendation || ''
+    };
+
+  } catch (error) {
+    console.error('Error detecting fake goods:', error);
+    return {
+      authentic_probability: 0,
+      confidence_level: 'low',
+      key_findings: [],
+      red_flags: [`Error analyzing authenticity: ${error instanceof Error ? error.message : 'Unknown error'}`],
+      authentic_indicators: [],
+      overall_assessment: 'Analysis failed',
+      recommendation: 'Unable to verify authenticity due to technical error'
+    };
+  }
+}
+
+async function translateText(text: string, sourceLang: string = 'English', targetLang: string = 'Chinese'): Promise<{
+  original_text: string,
+  translated_text: string, 
+  source_language: string,
+  target_language: string
+}> {
+  try {
+    const response = await fetch(`${process.env.LLM_API_URL}/api/v1/translate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text,
+        source_language: sourceLang,
+        target_language: targetLang
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Translation API returned ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    return {
+      original_text: result.original_text || text,
+      translated_text: result.translated_text || '',
+      source_language: result.source_language || sourceLang,
+      target_language: result.target_language || targetLang
+    };
+
+  } catch (error) {
+    console.error('Error translating text:', error);
+    return {
+      original_text: text,
+      translated_text: `Translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      source_language: sourceLang,
+      target_language: targetLang
+    };
+  }
+}
+
+
+
 
 // Call YOLO API for object detection and pose analysis
 async function callYOLOAPI(imageData: string) {
@@ -239,6 +300,125 @@ async function segmentHumanImage(croppedHumanImage: string, originalBox: number[
   }
 }
 
+// Helper function to convert image URL to base64
+async function imageUrlToBase64(imageUrl: string): Promise<string> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (error) {
+    console.error('Error converting image to base64:', error);
+    throw error;
+  }
+}
+
+// Function that processes an image through the complete analysis pipeline
+// Usage example:
+// const result = await processImageAnalysis('https://example.com/image.jpg', 'analysis-uuid', 'user-uuid');
+// This function returns data ready to insert into the analysis_detail table
+async function processImageAnalysis(imageUrl: string, analysisId: string, userId: string): Promise<{
+  analysis_id: string,
+  user_id: string,
+  image_url: string,
+  ai_confidence: number,
+  ai_result_text: string
+}> {
+  try {
+    // Step 1: Analyze luxury image to identify brand and product
+    console.log('Step 1: Analyzing luxury image...');
+    const luxuryAnalysis = await analyzeLuxuryImage(imageUrl);
+    
+    // Step 2: Convert image to base64 for fake goods detection
+    console.log('Step 2: Converting image to base64...');
+    const imageBase64 = await imageUrlToBase64(imageUrl);
+    
+    // Step 3: Detect fake goods using the brand from luxury analysis
+    console.log('Step 3: Detecting fake goods...');
+    const brandName = luxuryAnalysis.brand || 'Unknown Brand';
+    const fakeGoodsAnalysis = await detectFakeGoods(imageBase64, brandName);
+    
+    // Step 4: Translate the overall assessment to Chinese
+    console.log('Step 4: Translating results...');
+    const translationResult = await translateText(
+      fakeGoodsAnalysis.overall_assessment,
+      'English',
+      'Chinese'
+    );
+    
+    // Step 5: Compile comprehensive result
+    const comprehensiveResult = {
+      luxury_analysis: {
+        confidence: luxuryAnalysis.confident,
+        brand: luxuryAnalysis.brand,
+        product: luxuryAnalysis.product
+      },
+      authenticity_analysis: {
+        authentic_probability: fakeGoodsAnalysis.authentic_probability,
+        confidence_level: fakeGoodsAnalysis.confidence_level,
+        key_findings: fakeGoodsAnalysis.key_findings,
+        red_flags: fakeGoodsAnalysis.red_flags,
+        authentic_indicators: fakeGoodsAnalysis.authentic_indicators,
+        overall_assessment: fakeGoodsAnalysis.overall_assessment,
+        recommendation: fakeGoodsAnalysis.recommendation
+      },
+      translation: {
+        original_text: translationResult.original_text,
+        translated_text: translationResult.translated_text,
+        source_language: translationResult.source_language,
+        target_language: translationResult.target_language
+      }
+    };
+    
+    // Calculate overall confidence score (average of luxury confidence and authenticity probability)
+    const overallConfidence = (luxuryAnalysis.confident + fakeGoodsAnalysis.authentic_probability) / 2;
+    
+    // Return data structure matching analysis_detail schema
+    return {
+      analysis_id: analysisId,
+      user_id: userId,
+      image_url: imageUrl,
+      ai_confidence: Math.round(overallConfidence * 10000) / 10000, // Round to 4 decimal places
+      ai_result_text: JSON.stringify(comprehensiveResult)
+    };
+    
+  } catch (error) {
+    console.error('Error in processImageAnalysis:', error);
+    
+    // Return error result in schema format
+    return {
+      analysis_id: analysisId,
+      user_id: userId,
+      image_url: imageUrl,
+      ai_confidence: 0.0000,
+      ai_result_text: JSON.stringify({
+        error: true,
+        message: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        luxury_analysis: { confidence: 0, brand: null, product: null },
+        authenticity_analysis: {
+          authentic_probability: 0,
+          confidence_level: 'low',
+          key_findings: [],
+          red_flags: [`Error during analysis: ${error instanceof Error ? error.message : 'Unknown error'}`],
+          authentic_indicators: [],
+          overall_assessment: 'Analysis failed due to technical error',
+          recommendation: 'Unable to verify authenticity'
+        },
+        translation: {
+          original_text: 'Analysis failed',
+          translated_text: '分析失败',
+          source_language: 'English',
+          target_language: 'Chinese'
+        }
+      })
+    };
+  }
+}
+
 // Modified AI analysis function
 async function performAIAnalysis(imageUrl: string, analysisId: string, userId: string) {
 
@@ -247,14 +427,12 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
   
   if (yoloResults.error) {
     console.error('YOLO API failed:', yoloResults.error)
-    // Fallback to original segmentation approach
-    const segments = await segmentImage(imageUrl)
-    return await processSegments(segments, 'fallback_segmentation')
+    return []
   }
 
   // Step 2: Process all detections with sufficient confidence
   const validDetections = yoloResults.detections.filter((detection: any) => 
-    detection.confidence >= 0.6 // Lower threshold for all objects
+    detection.confidence >= 0.62 // Lower threshold for all objects
   )
 
   if (validDetections.length === 0) {
@@ -283,20 +461,23 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
         const humanSegment = humanSegments[j]
         
         // Analyze each human segment part
-        const aiResult = await callAIForSegment(humanSegment.segment, parseInt(`${i}${j}`), humanSegment.coordinates)
+        const aiResult = await processImageAnalysis(humanSegment.segment, analysisId, userId)
+        
+        // Parse the AI result from processImageAnalysis
+        const aiResultData = JSON.parse(aiResult.ai_result_text)
         
         // Create analysis detail for this human segment part
         const analysisDetail = {
           type: `human_segment_${i + 1}_part_${j + 1}`,
-          description: `Analysis of human ${i + 1} segment part ${j + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
-          confidence: aiResult.confidence,
+          description: `Analysis of human ${i + 1} segment part ${j + 1} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+          confidence: aiResult.ai_confidence,
           imageData: humanSegment.segment,
           metadata: {
             segmentIndex: `${i}_${j}`,
             coordinates: humanSegment.coordinates,
-            manipulationDetected: aiResult.manipulationDetected,
-            processingTime: aiResult.processingTime,
-            hasError: aiResult.error || false,
+            manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+            processingTime: 1000, // Default processing time
+            hasError: aiResultData.error || false,
             yoloDetection: {
               confidence: detection.confidence,
               box: detection.box,
@@ -304,7 +485,8 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
               pose: detection.pose,
               parentDetectionIndex: i,
               segmentPartIndex: j
-            }
+            },
+            aiAnalysisResult: aiResultData
           }
         }
         
@@ -318,18 +500,16 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
       const croppedImage = await cropImageByBox(imageUrl, detection.box)
       
       // Analyze the non-human detection directly (no further segmentation)
-      const aiResult = await callAIForSegment(croppedImage, i, {
-        x: detection.box[0],
-        y: detection.box[1], 
-        width: detection.box[2] - detection.box[0],
-        height: detection.box[3] - detection.box[1]
-      })
+      const aiResult = await processImageAnalysis(croppedImage, analysisId, userId)
+      
+      // Parse the AI result from processImageAnalysis
+      const aiResultData = JSON.parse(aiResult.ai_result_text)
       
       // Create analysis detail for this non-human detection
       const analysisDetail = {
         type: `${detection.type}_detection_${i + 1}`,
-        description: `Analysis of detected ${detection.type} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResult.findings}`,
-        confidence: aiResult.confidence,
+        description: `Analysis of detected ${detection.type} (confidence: ${(detection.confidence * 100).toFixed(1)}%) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+        confidence: aiResult.ai_confidence,
         imageData: croppedImage,
         metadata: {
           segmentIndex: i,
@@ -339,15 +519,16 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
             width: detection.box[2] - detection.box[0],
             height: detection.box[3] - detection.box[1]
           },
-          manipulationDetected: aiResult.manipulationDetected,
-          processingTime: aiResult.processingTime,
-          hasError: aiResult.error || false,
+          manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+          processingTime: 1000, // Default processing time
+          hasError: aiResultData.error || false,
           yoloDetection: {
             confidence: detection.confidence,
             box: detection.box,
             classId: detection.classId,
             pose: detection.pose
-          }
+          },
+          aiAnalysisResult: aiResultData
         }
       }
       
@@ -359,27 +540,31 @@ async function performAIAnalysis(imageUrl: string, analysisId: string, userId: s
 }
 
 // Helper function to process segments (for fallback)
-async function processSegments(segments: any[], analysisType: string) {
+async function processSegments(segments: any[], analysisType: string, analysisId: string, userId: string) {
   const segmentResults = []
   
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]
     
     // Call AI API for this specific segment
-    const aiResult = await callAIForSegment(segment.segment, i, segment.coordinates)
+    const aiResult = await processImageAnalysis(segment.segment, analysisId, userId)
+    
+    // Parse the AI result from processImageAnalysis
+    const aiResultData = JSON.parse(aiResult.ai_result_text)
     
     // Create analysis detail for this segment
     const analysisDetail = {
       type: `${analysisType}_${i + 1}`,
-      description: `Analysis of image segment ${i + 1} (${segment.coordinates.x},${segment.coordinates.y}) - ${aiResult.findings}`,
-      confidence: aiResult.confidence,
+      description: `Analysis of image segment ${i + 1} (${segment.coordinates.x},${segment.coordinates.y}) - ${aiResultData.authenticity_analysis?.overall_assessment || 'Analysis completed'}`,
+      confidence: aiResult.ai_confidence,
       imageData: segment.segment,
       metadata: {
         segmentIndex: i,
         coordinates: segment.coordinates,
-        manipulationDetected: aiResult.manipulationDetected,
-        processingTime: aiResult.processingTime,
-        hasError: aiResult.error || false
+        manipulationDetected: aiResultData.authenticity_analysis?.authentic_probability < 0.5,
+        processingTime: 1000, // Default processing time
+        hasError: aiResultData.error || false,
+        aiAnalysisResult: aiResultData
       }
     }
     
