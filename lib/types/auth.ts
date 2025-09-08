@@ -18,6 +18,7 @@ export interface AuthUser {
 export interface AuthContextType {
   user: AuthUser | null
   profile: UserProfile | null
+  token: string | null
   isLoading: boolean
   isAdmin: boolean
   signIn: (email: string, password: string) => Promise<void>

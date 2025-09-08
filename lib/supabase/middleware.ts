@@ -65,10 +65,23 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Redirect authenticated admins away from login page
-  if (request.nextUrl.pathname === '/admin/login' && user && userRole === 'admin') {
+  // Redirect authenticated users away from login page
+  if (request.nextUrl.pathname === '/admin/login' && user) {
     const url = request.nextUrl.clone()
-    url.pathname = '/admin/dashboard'
+    if (userRole === 'admin') {
+      url.pathname = '/admin/dashboard'
+    } else {
+      url.pathname = '/dashboard'
+    }
+    return NextResponse.redirect(url)
+  }
+
+  // Protect user dashboard routes (analysis, dashboard)
+  if ((request.nextUrl.pathname.startsWith('/dashboard') || 
+       request.nextUrl.pathname.startsWith('/analysis')) && 
+      !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/admin/login'
     return NextResponse.redirect(url)
   }
 

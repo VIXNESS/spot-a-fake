@@ -1,16 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
 import { UserProfile, UserRole } from '@/lib/types/auth'
 import Link from 'next/link'
 
 export default function AdminDashboard() {
-  const { user, isAdmin, isLoading: authLoading } = useAuth()
+  const { user, isAdmin, isLoading: authLoading, signOut } = useAuth()
+  const router = useRouter()
   const [users, setUsers] = useState<UserProfile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [loadingTime, setLoadingTime] = useState(0)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -40,13 +45,68 @@ export default function AdminDashboard() {
     }
   }, [isAdmin])
 
+  // Timeout logic: clear auth and redirect if loading takes over 10 seconds
+  useEffect(() => {
+    if (authLoading) {
+      // Reset loading time counter
+      setLoadingTime(0)
+      
+      // Start loading time counter
+      loadingTimerRef.current = setInterval(() => {
+        setLoadingTime(prev => prev + 1)
+      }, 1000)
+      
+      // Set a 10-second timeout
+      timeoutRef.current = setTimeout(async () => {
+        console.warn('Auth loading timeout - clearing auth info and redirecting to login')
+        try {
+          await signOut()
+        } catch (error) {
+          console.error('Error during signOut on timeout:', error)
+        } finally {
+          router.push('/admin/login')
+        }
+      }, 10000)
+    } else {
+      // Clear timeout and timer if loading finishes
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current)
+        loadingTimerRef.current = null
+      }
+    }
+
+    // Cleanup timeout and timer on unmount
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current)
+        loadingTimerRef.current = null
+      }
+    }
+  }, [authLoading, signOut, router])
+
   // Show loading state while auth is being determined
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-          <p className="mt-2 text-gray-600">Loading...</p>
+          <p className="mt-2 text-gray-600">Loading authentication...</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {loadingTime}s {loadingTime >= 5 ? '(this is taking longer than usual)' : ''}
+          </p>
+          {loadingTime >= 8 && (
+            <p className="mt-2 text-sm text-amber-600 font-medium">
+              ⚠️ Timeout in {10 - loadingTime}s - will redirect to login
+            </p>
+          )}
         </div>
       </div>
     )

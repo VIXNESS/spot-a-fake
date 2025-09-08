@@ -10,15 +10,32 @@ export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   
-  const { signIn, user, isAdmin } = useAuth()
+  const { signIn, user, isAdmin, isLoading: authLoading } = useAuth()
   const router = useRouter()
 
-  // Redirect if already authenticated as admin
+  // Redirect if already authenticated
   useEffect(() => {
-    if (user && isAdmin) {
-      router.push('/admin/dashboard')
+    if (!authLoading && user) {
+      console.log('Redirecting to dashboard...', { user: user.id, isAdmin })
+      if (isAdmin) {
+        router.push('/admin/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     }
-  }, [user, isAdmin, router])
+  }, [user, isAdmin, authLoading, router])
+
+  // Show loading while auth is being determined
+  if (authLoading) {
+    return (
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          <p className="mt-2 text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,10 +44,11 @@ export default function AdminLogin() {
 
     try {
       await signIn(email, password)
-      // The useEffect above will handle the redirect
+      console.log('Sign in successful, redirecting...')
+      // The useEffect will handle the redirect based on user role
     } catch (err: any) {
+      console.error('Sign in error:', err)
       setError(err.message || 'Failed to sign in')
-    } finally {
       setIsLoading(false)
     }
   }
@@ -39,10 +57,10 @@ export default function AdminLogin() {
     <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Admin Sign In
+            Sign In
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Access the administrative dashboard
+            Access your Spot a Fake account
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>

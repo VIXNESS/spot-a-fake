@@ -22,7 +22,7 @@ export default function DashboardLayout({
     )
   }
 
-  // Let middleware handle redirects for non-admin users
+  // For non-admin users, show a simplified layout
   if (!isAdmin) {
     return children
   }
