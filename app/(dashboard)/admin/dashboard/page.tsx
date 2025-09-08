@@ -14,8 +14,18 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [loadingTime, setLoadingTime] = useState(0)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const timeoutRef = useRef<number | null>(null)
+  const loadingTimerRef = useRef<number | null>(null)
+
+  // Log user authentication state changes
+  useEffect(() => {
+    console.log('🔐 Admin Dashboard - Auth state changed:', {
+      user: user ? { id: user.id, email: user.email } : null,
+      isAdmin,
+      authLoading,
+      timestamp: new Date().toISOString()
+    })
+  }, [user, isAdmin, authLoading])
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -41,9 +51,13 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (isAdmin) {
+      console.log('🔐 Admin access confirmed - fetching users', {
+        user: user ? { id: user.id, email: user.email } : null,
+        timestamp: new Date().toISOString()
+      })
       fetchUsers()
     }
-  }, [isAdmin])
+  }, [isAdmin, user])
 
   // Timeout logic: clear auth and redirect if loading takes over 10 seconds
   useEffect(() => {
@@ -58,12 +72,18 @@ export default function AdminDashboard() {
       
       // Set a 10-second timeout
       timeoutRef.current = setTimeout(async () => {
-        console.warn('Auth loading timeout - clearing auth info and redirecting to login')
+        console.warn('🔐 Auth loading timeout - clearing auth info and redirecting to login', {
+          loadingTime: 10,
+          user: user ? { id: user.id, email: user.email } : null,
+          timestamp: new Date().toISOString()
+        })
         try {
           await signOut()
+          console.log('🔐 Sign out successful during timeout')
         } catch (error) {
-          console.error('Error during signOut on timeout:', error)
+          console.error('🔐 Error during signOut on timeout:', error)
         } finally {
+          console.log('🔐 Redirecting to admin login after timeout')
           router.push('/admin/login')
         }
       }, 10000)

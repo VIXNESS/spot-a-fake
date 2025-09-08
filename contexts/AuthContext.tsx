@@ -15,33 +15,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = profile?.role === 'admin'
 
-  // Fetch user profile
-  const fetchProfile = async (userId: string): Promise<UserProfile | null> => {
+  // Fetch user profile with retry mechanism
+  const fetchProfile = async (userId: string, retryCount = 0): Promise<UserProfile | null> => {
+    const maxRetries = 2
+    
     try {
-      console.log('AuthContext: fetchProfile called for user:', userId)
+      console.log(`AuthContext: fetchProfile called for user: ${userId} (attempt ${retryCount + 1}/${maxRetries + 1})`)
       
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
-      })
-      
-      const fetchPromise = supabase
+      const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('user_id', userId)
         .single()
-      
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise])
 
       if (error) {
-        console.error('AuthContext: Error fetching profile:', error)
+        console.error('AuthContext: Supabase error fetching profile:', error)
+        
+        // Retry on certain errors if we haven't exceeded max retries
+        if (retryCount < maxRetries && (
+          error.message.includes('timeout') || 
+          error.message.includes('network') ||
+          error.message.includes('connection') ||
+          error.code === 'PGRST116' || // Supabase timeout
+          error.code === '08006' // Connection failure
+        )) {
+          console.log(`AuthContext: Retrying profile fetch due to error (${retryCount + 1}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          return fetchProfile(userId, retryCount + 1)
+        }
+        
         return null
       }
 
-      console.log('AuthContext: Profile fetched successfully:', data)
-      return data as UserProfile
-    } catch (error) {
+      if (data) {
+        console.log('AuthContext: Profile fetched successfully:', data)
+        return data as UserProfile
+      }
+
+      return null
+    } catch (error: any) {
       console.error('AuthContext: Error in fetchProfile:', error)
+      
+      // Retry on network errors if we haven't exceeded max retries
+      if (retryCount < maxRetries && (
+        error.message.includes('network') ||
+        error.message.includes('fetch') ||
+        error.name === 'TypeError' // Often network-related
+      )) {
+        console.log(`AuthContext: Retrying profile fetch after error (${retryCount + 1}/${maxRetries})`)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        return fetchProfile(userId, retryCount + 1)
+      }
+      
       return null
     }
   }
@@ -156,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('AuthContext: Getting initial session...')
         const { data: { session }, error } = await supabase.auth.getSession()
+        console.log('AuthContext: Initial session result:', session ? 'session exists' : 'no session')
         
         if (error) {
           console.error('AuthContext: Error getting session:', error)
@@ -175,11 +201,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (isMounted) {
               setProfile(profile)
               console.log('AuthContext: Profile fetched:', profile ? 'success' : 'failed')
+              
+              // If profile fetch failed, still allow the user to continue without profile
+              if (!profile) {
+                console.warn('AuthContext: Continuing without profile data - user may have limited functionality')
+              }
             }
           } catch (profileError) {
             console.error('AuthContext: Error fetching profile:', profileError)
             if (isMounted) {
               setProfile(null)
+              console.warn('AuthContext: Continuing without profile data due to error')
             }
           }
         } else {
@@ -218,11 +250,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userProfile = await fetchProfile(session.user.id)
           if (isMounted) {
             setProfile(userProfile)
+            
+            // If profile fetch failed, still allow the user to continue
+            if (!userProfile) {
+              console.warn('AuthContext: Auth state changed but profile fetch failed - user may have limited functionality')
+            }
           }
         } catch (error) {
           console.error('AuthContext: Error fetching profile on auth change:', error)
           if (isMounted) {
             setProfile(null)
+            console.warn('AuthContext: Continuing without profile data due to error on auth change')
           }
         }
       } else {
