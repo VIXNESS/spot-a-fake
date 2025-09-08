@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     const { data: newUser, error: createError } = await adminSupabase.auth.admin.createUser({
       email,
       password,
-      email_confirm: false, // Auto-confirm email
+      email_confirm: true, // Auto-confirm email - user can sign in immediately
     })
 
     if (createError) {
