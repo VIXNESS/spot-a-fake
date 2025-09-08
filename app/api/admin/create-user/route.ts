@@ -72,6 +72,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Explicitly confirm the user's email to ensure they can sign in immediately
+    const { error: confirmError } = await adminSupabase.auth.admin.updateUserById(
+      newUser.user.id,
+      { 
+        email_confirm: true,
+        // Ensure the email_confirmed_at timestamp is set
+        user_metadata: {
+          ...newUser.user.user_metadata,
+          email_confirmed_at: new Date().toISOString()
+        }
+      }
+    )
+
+    if (confirmError) {
+      console.error('Error confirming user email:', confirmError)
+      // Don't fail the request if email confirmation fails, but log it
+    }
+
     // The user profile will be automatically created by the database trigger
     // We can fetch it to confirm it was created
     const { data: userProfile, error: profileFetchError } = await adminSupabase
