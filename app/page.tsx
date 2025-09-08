@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { HealthStatus } from "@/components/HealthStatus";
 
 export default function Home() {
   return (
@@ -12,6 +13,21 @@ export default function Home() {
           height={38}
           priority
         />
+        <div className="w-full max-w-lg p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              API Health Status
+            </h2>
+            <a
+              href="/health"
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+            >
+              View Details
+            </a>
+          </div>
+          <HealthStatus showDetails={false} />
+        </div>
+
         <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
           <li className="mb-2 tracking-[-.01em]">
             Get started by editing{" "}
