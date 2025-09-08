@@ -20,6 +20,7 @@ async function analyzeLuxuryImage(imageUrl: string): Promise<{
     });
 
     if (!response.ok) {
+      console.log('Luxury analysis API returned', response);
       throw new Error(`Luxury analysis API returned ${response.status}`);
     }
 
