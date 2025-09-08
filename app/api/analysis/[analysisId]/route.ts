@@ -10,6 +10,7 @@ export async function GET(
     
     // Get the Authorization header
     const authHeader = request.headers.get('authorization')
+    console.log('Auth header:', authHeader)
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(

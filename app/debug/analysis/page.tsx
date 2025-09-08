@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface ApiResponse {
   success: boolean
@@ -15,6 +16,7 @@ interface ApiResponse {
 }
 
 export default function AnalysisDebugPage() {
+  const { user, profile, token, isLoading, isAdmin } = useAuth()
   const [analysisId, setAnalysisId] = useState('')
   const [authToken, setAuthToken] = useState('')
   const [response, setResponse] = useState<ApiResponse | null>(null)
@@ -36,6 +38,16 @@ export default function AnalysisDebugPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('debug-auth-token', token)
     }
+  }
+
+  const useCurrentUserToken = () => {
+    if (token) {
+      saveToken(token)
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
   }
 
   const testAnalysisApi = async () => {
@@ -102,6 +114,83 @@ export default function AnalysisDebugPage() {
     <div className="container mx-auto p-6 max-w-4xl">
       <h1 className="text-3xl font-bold mb-6">Analysis API Debug Tool</h1>
       
+      {/* User Authentication Info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-4">Current User Authentication</h2>
+        
+        {isLoading ? (
+          <div className="text-gray-600">Loading authentication status...</div>
+        ) : user ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* User Info */}
+              <div className="bg-white rounded-lg p-4">
+                <h3 className="font-medium mb-3 text-gray-800">User Information</h3>
+                <div className="space-y-2 text-sm">
+                  <div><strong>User ID:</strong> <code className="bg-gray-100 px-1 rounded">{user.id}</code></div>
+                  <div><strong>Email:</strong> {user.email || 'N/A'}</div>
+                  <div><strong>Role:</strong> 
+                    <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+                      isAdmin ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {profile?.role || 'Unknown'}
+                    </span>
+                  </div>
+                  {profile && (
+                    <div><strong>Profile Created:</strong> {new Date(profile.created_at).toLocaleString()}</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bearer Token */}
+              <div className="bg-white rounded-lg p-4">
+                <h3 className="font-medium mb-3 text-gray-800">Bearer Token</h3>
+                {token ? (
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <div className="bg-gray-100 p-2 rounded text-xs font-mono break-all">
+                        {token.substring(0, 50)}...
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => copyToClipboard(token)}
+                        className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded"
+                      >
+                        Copy Full Token
+                      </button>
+                      <button
+                        onClick={useCurrentUserToken}
+                        className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded"
+                      >
+                        Use This Token
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-red-600 text-sm">No token available</div>
+                )}
+              </div>
+            </div>
+
+            {/* Full Profile Data */}
+            {profile && (
+              <div className="bg-white rounded-lg p-4">
+                <h3 className="font-medium mb-3 text-gray-800">Full Profile Data</h3>
+                <pre className="text-xs bg-gray-100 p-3 rounded overflow-auto">
+                  {JSON.stringify(profile, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="text-red-600 font-medium mb-2">Not Authenticated</div>
+            <div className="text-sm text-gray-600">You need to log in to access authentication information.</div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
         <h2 className="text-lg font-semibold mb-2">API Endpoint</h2>
         <code className="text-sm bg-gray-100 px-2 py-1 rounded">
@@ -173,7 +262,7 @@ export default function AnalysisDebugPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Token is automatically saved to localStorage for convenience
+              Token is automatically saved to localStorage for convenience. Use the "Use This Token" button above to auto-fill with your current session token.
             </p>
           </div>
         </div>
